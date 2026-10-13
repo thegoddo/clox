@@ -17,16 +17,16 @@ typedef enum {
 
 typedef struct {
   int count;    // how many elements are there
-  int capacity; // total number of elements that can be added here 
+  int capacity; // total number of elements that can be added here
                 // https://craftinginterpreters.com/image/chunks-of-bytecode/grow.png
-  uint8_t* code;
-  int* lines;
+  uint8_t *code;
+  int *lines;
   ValueArray constants;
 } Chunk;
 
-void initChunk(Chunk* chunk);
-void freeChunk(Chunk* chunk);
-void writeChunk(Chunk* chunk, uint8_t byte, int line);
-int addConstant(Chunk* chunk, Value value);
+void initChunk(Chunk *chunk);
+void freeChunk(Chunk *chunk);
+void writeChunk(Chunk *chunk, uint8_t byte, int line);
+int addConstant(Chunk *chunk, Value value);
 
 #endif
