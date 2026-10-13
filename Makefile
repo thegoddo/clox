@@ -10,3 +10,6 @@ $(TARGET): $(SOURCES)
 
 clean:
 	rm -f $(TARGET)
+
+
+.PHONY: clean

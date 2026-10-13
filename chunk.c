@@ -5,7 +5,7 @@
 #include "memory.h"
 #include "value.h"
 
-void init(Chunk *chunk) {
+void initChunk(Chunk *chunk) {
   chunk->count = 0;
   chunk->capacity = 0;
   chunk->code = NULL;
