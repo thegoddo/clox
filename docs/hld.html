@@ -1,0 +1,91 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>High-level design · clox</title><link rel=stylesheet href='style.css'></head><body><header class=top><div class=in><b>clox</b><a href="index.html">Overview</a><a href="hld.html" class="on">High-level design</a><a href="lld.html">Low-level design</a><a href="files/index.html">File docs</a></div></header><main>
+<h1>High-level design</h1>
+<p class=lede>clox is a bytecode interpreter for the Lox language, written in C while following <em>Crafting Interpreters</em> (Part III). Source goes in; a compact bytecode program is produced; a stack VM executes it.</p>
+
+<div class=banner><b class=t>Where you are: chapter 18 complete</b>
+You have finished <b>chapter 18 – Types of Values</b> (fixes to match the book are in the working tree, not yet committed). The language is still a <em>calculator</em>: one expression per line (numbers, booleans, nil, <code>- ! + - * / == != &lt; &lt;= &gt; &gt;=</code>). There are no statements, strings, or variables yet.
+<br>It builds cleanly with gcc (<code>-Wall -Wextra -std=c11</code>; the only warning is the book's unused <code>oldSize</code> in <code>reallocate</code>) and passes the smoke tests in the <a href="lld.html#issues">LLD</a>.</div>
+
+<h2>Architecture</h2>
+
+<svg viewBox="0 0 920 250" width="100%" role="img" aria-label="Pipeline: source to scanner to compiler to chunk to VM">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="bx" x="10" y="20" width="120" height="64" rx="8"/><text x="70" y="48" text-anchor="middle">Source text</text><text class="sub" x="70" y="66" text-anchor="middle">REPL line / .lox file</text>
+<rect class="bx hl" x="180" y="20" width="120" height="64" rx="8"/><text x="240" y="48" text-anchor="middle">Scanner</text><text class="sub" x="240" y="66" text-anchor="middle">scanner.c</text>
+<rect class="bx hl" x="350" y="20" width="150" height="64" rx="8"/><text x="425" y="48" text-anchor="middle">Compiler (Pratt)</text><text class="sub" x="425" y="66" text-anchor="middle">compiler.c</text>
+<rect class="bx hl" x="550" y="20" width="150" height="64" rx="8"/><text x="625" y="48" text-anchor="middle">Chunk (bytecode)</text><text class="sub" x="625" y="66" text-anchor="middle">chunk.c + value.c</text>
+<rect class="bx hl" x="750" y="20" width="150" height="64" rx="8"/><text x="825" y="48" text-anchor="middle">VM run loop</text><text class="sub" x="825" y="66" text-anchor="middle">vm.c</text>
+<path class="ar" d="M130 52H178" marker-end="url(#a)"/><path class="ar" d="M300 52H348" marker-end="url(#a)"/>
+<path class="ar" d="M500 52H548" marker-end="url(#a)"/><path class="ar" d="M700 52H748" marker-end="url(#a)"/>
+<text class="sub" x="239" y="40" text-anchor="middle"></text>
+<text class="sub" x="324" y="112" text-anchor="middle">Tokens (on demand)</text><path class="ar dash" d="M300 90H350" />
+<text class="sub" x="525" y="112" text-anchor="middle">emit bytes</text>
+<text class="sub" x="725" y="112" text-anchor="middle">fetch/execute</text>
+<rect class="bx" x="10" y="150" width="890" height="40" rx="8"/><text x="455" y="175" text-anchor="middle">main.c — chooses REPL or file → calls interpret(source) → vm.c orchestrates compile() then run() → maps result to exit code</text>
+<rect class="bx" x="350" y="205" width="350" height="34" rx="8" stroke-dasharray="5 4"/><text x="525" y="227" text-anchor="middle">debug.c — disassembler (compile-time dump + per-step trace)</text>
+<path class="ar dash" d="M425 84V150"/><path class="ar dash" d="M825 84V150"/>
+</svg>
+<p>Everything is <strong>single-pass</strong>: there is no AST. The compiler pulls tokens from the scanner one at a time and writes bytecode into a <code>Chunk</code> as soon as it recognises each construct. The VM then walks the chunk with an instruction pointer, using a value stack for operands.</p>
+
+<h2>Modules</h2>
+<table><tr><th>Module</th><th>Layer</th><th>Responsibility</th></tr><tr><td><a href="files/main.c.html"><code>main.c</code></a></td><td>Entry</td><td>CLI. REPL or script mode, exit codes.</td></tr><tr><td><a href="files/vm.c.html"><code>vm.c</code></a></td><td>Runtime</td><td>Owns the stack and instruction pointer. interpret() = compile + run.</td></tr><tr><td><a href="files/compiler.c.html"><code>compiler.c</code></a></td><td>Front-end</td><td>Single-pass Pratt parser; emits bytecode as it parses.</td></tr><tr><td><a href="files/scanner.c.html"><code>scanner.c</code></a></td><td>Front-end</td><td>Lexer. Pull-model: compiler asks for one token at a time.</td></tr><tr><td><a href="files/chunk.c.html"><code>chunk.c</code></a></td><td>Data</td><td>Bytecode array + line table + constant pool.</td></tr><tr><td><a href="files/value.c.html"><code>value.c</code></a></td><td>Data</td><td>Tagged-union runtime values; ValueArray.</td></tr><tr><td><a href="files/memory.c.html"><code>memory.c</code></a></td><td>Support</td><td>The only malloc/free gateway.</td></tr><tr><td><a href="files/debug.c.html"><code>debug.c</code></a></td><td>Support</td><td>Disassembler.</td></tr><tr><td><a href="files/common.h.html"><code>common.h</code></a></td><td>Support</td><td>Shared includes + debug flags.</td></tr></table>
+
+<h2>Layering</h2>
+<p>Dependencies point downward. (Click a box for its file page.) One wrinkle: <code>compiler.h</code> includes <code>vm.h</code> (for <code>Chunk</code>), and <code>vm.c</code> calls the compiler, so runtime and front-end know about each other at the header level.</p>
+<div class=layers><div class=layer><div class=lab>Entry</div><a class=box href="files/main.c.html"><b>main.c</b>CLI: REPL when no args, run a script file when one arg.</a></div><div class=layer><div class=lab>Runtime</div><a class=box href="files/vm.c.html"><b>vm.c</b>Bytecode interpreter: run loop, stack, runtime errors.</a><a class=box href="files/vm.h.html"><b>vm.h</b>VM state, result codes, public API.</a></div><div class=layer><div class=lab>Front-end</div><a class=box href="files/compiler.c.html"><b>compiler.c</b>Single-pass Pratt parser that emits bytecode directly (no AST).</a><a class=box href="files/scanner.c.html"><b>scanner.c</b>On-demand lexer: characters → tokens.</a></div><div class=layer><div class=lab>Data model</div><a class=box href="files/chunk.c.html"><b>chunk.c</b>Chunk lifecycle: init, free, write a byte, add a constant.</a><a class=box href="files/value.c.html"><b>value.c</b>ValueArray growth/free, printValue, valuesEqual.</a></div><div class=layer><div class=lab>Support</div><a class=box href="files/memory.c.html"><b>memory.c</b>Implements reallocate().</a><a class=box href="files/debug.c.html"><b>debug.c</b>Disassembler: bytecode → text.</a><a class=box href="files/common.h.html"><b>common.h</b>Umbrella header: standard includes + debug switches.</a></div></div>
+
+<h2>Life of one REPL line</h2>
+<ol class=flow>
+<li><code>main.c</code> prints <code>&gt; </code>, <code>fgets</code> a line, calls <code>interpret(line)</code>.</li>
+<li><code>interpret</code> (vm.c) creates an empty <code>Chunk</code> and calls <code>compile(source, &amp;chunk)</code>.</li>
+<li>The compiler initialises the scanner, advances to the first token, parses one <code>expression()</code>, expects EOF, emits <code>OP_RETURN</code>. Syntax errors are printed to stderr and flip <code>hadError</code>.</li>
+<li>If <code>DEBUG_PRINT_CODE</code> is on and there was no error, the chunk is disassembled to stdout.</li>
+<li>On success, the VM sets <code>ip</code> to the first byte and runs <code>run()</code>: constants are pushed, operators pop operands and push results.</li>
+<li><code>OP_RETURN</code> pops the final value, prints it, returns <code>INTERPRET_OK</code>. The chunk is freed and the REPL loops.</li></ol>
+
+<h2>Key design decisions</h2>
+<div class=grid>
+<div class=card><b>Bytecode VM, not tree-walker</b><br>Compact, cache-friendly, fast dispatch; the cost is a compiler step.</div>
+<div class=card><b>Pratt parser, no AST</b><br>One table (<code>rules[]</code>) drives all expression parsing and precedence — adding an operator is one table row.</div>
+<div class=card><b>Stack-based VM</b><br>Operands implicit on a stack → short instructions, trivial codegen.</div>
+<div class=card><b>Pull scanner + trie keywords</b><br>No token array; keyword lookup with a hand-rolled trie — zero allocation.</div>
+<div class=card><b>Tagged-union values</b><br>16-byte <code>Value</code>; no coercion; only <code>nil</code> and <code>false</code> are falsey.</div>
+<div class=card><b>One allocator</b><br><code>reallocate()</code> is the sole heap gateway, so a future GC can count bytes.</div>
+</div>
+
+<h2>Language supported today</h2>
+<pre><code>expression → equality
+equality   → comparison ( ( "!=" | "==" ) comparison )*
+comparison → term ( ( ">" | ">=" | "<" | "<=" ) term )*
+term       → factor ( ( "-" | "+" ) factor )*
+factor     → unary ( ( "/" | "*" ) unary )*
+unary      → ( "!" | "-" ) unary | primary
+primary    → NUMBER | "true" | "false" | "nil" | "(" expression ")"</code></pre>
+<p>Strings, identifiers, <code>and</code>/<code>or</code>, <code>print</code>, <code>var</code>, blocks etc. are tokenised but have no parse rule (<code>rules[]</code> entry is <code>{NULL, NULL, PREC_NONE}</code>), so they give <code>Expect expression.</code></p>
+
+<h2>Build, tooling &amp; conventions</h2>
+<ul>
+<li><strong>Build:</strong> <code>make</code> (format → gcc <code>-Wall -Wextra -std=c11</code>) → <code>./clox</code>. Run with no args for the REPL or <code>./clox file.lox</code>.</li>
+<li><strong>Formatting:</strong> clang-format, 80 cols, 2-space indent. <code>make check-format</code> mirrors the pre-commit hook (hook only active if <code>git config core.hooksPath .githooks</code> — currently unset).</li>
+<li><strong>Debug flags</strong> in common.h: <code>DEBUG_PRINT_CODE</code> (disassemble after compile), <code>DEBUG_TRACE_EXECUTION</code> (per-step stack + instruction trace).</li>
+<li><strong>Exit codes:</strong> 64 usage · 65 compile error · 70 runtime error · 74 I/O.</li>
+<li>No tests exist yet.</li></ul>
+
+<h2>Progress against the book</h2>
+<table><tr><th>Ch</th><th>Topic</th><th>Status</th><th>Notes</th></tr><tr><td>14</td><td>Chunks of Bytecode</td><td><span class="tag t-done">done</span></td><td>chunk.c, debug.c, memory.c</td></tr><tr><td>15</td><td>A Virtual Machine</td><td><span class="tag t-done">done</span></td><td>vm.c — stack, run loop</td></tr><tr><td>16</td><td>Scanning on Demand</td><td><span class="tag t-done">done</span></td><td>Scanner works (nested switch + isDigit fixed)</td></tr><tr><td>17</td><td>Compiling Expressions</td><td><span class="tag t-done">done</span></td><td>Pratt parser: numbers, grouping, unary, binary</td></tr><tr><td>18</td><td>Types of Values</td><td><span class="tag t-done">done</span></td><td>Bool/nil/number values, comparison + equality opcodes</td></tr><tr><td>19</td><td>Strings</td><td><span class="tag t-todo">not started</span></td><td>needs Obj header, heap objects, concat</td></tr><tr><td>20</td><td>Hash Tables</td><td><span class="tag t-todo">not started</span></td><td>string interning, globals table</td></tr><tr><td>21</td><td>Global Variables</td><td><span class="tag t-todo">not started</span></td><td>statements, print, var, synchronize()</td></tr><tr><td>22–25</td><td>Locals · Control flow · Functions · Closures</td><td><span class="tag t-todo">not started</span></td><td></td></tr><tr><td>26–30</td><td>GC · Classes · Methods · Inheritance · Optimisation</td><td><span class="tag t-todo">not started</span></td><td></td></tr></table>
+
+<h2>History</h2>
+<table><tr><th>Date</th><th>Commit</th><th>What</th></tr>
+<tr><td>2026-10-22</td><td><code>f84463e</code></td><td>value type — tagged union, bool/nil ops, comparison opcodes</td></tr>
+<tr><td>2026-10-19</td><td><code>7be15e1</code></td><td>setup compiling and precedence — Pratt parser, number/unary/binary/grouping</td></tr>
+<tr><td>2026-10-13</td><td><code>9bd8c85</code></td><td>tries, DFA, and scanner</td></tr>
+<tr><td>2026-10-13</td><td><code>f5c8ffd</code></td><td>format before commit — .clang-format + hook</td></tr>
+<tr><td>2026-10-13</td><td><code>4b71a0f</code> · <code>33c1a4d</code> · <code>31f5980</code></td><td>VM init, VM setup, Makefile &amp; build fixes</td></tr>
+<tr><td>2026-10-13</td><td><code>6dadeb4</code> · <code>4df0aee</code></td><td>Initial commit + upload (chunk/value/memory/debug)</td></tr></table>
+
+<h2>Suggested next steps</h2>
+<ol>
+<li>Smoke test: <code>1 + 2 * 3</code> → <code>7</code>; <code>!(5 - 4 &gt; 3 * 2 == !nil)</code> → <code>true</code>; <code>-true</code> → runtime error.</li>
+<li>Commit the fixes, then start chapter 19 (strings / <code>Obj</code>).</li></ol>
+<p>Details: <a href="lld.html">Low-level design →</a> · <a href="files/index.html">File docs →</a></p>
+</main></body></html>
