@@ -2,6 +2,7 @@
 #include "chunk.h"
 #include "common.h"
 #include "compiler.h"
+#include "debug.h"
 #include "value.h"
 #include <stdarg.h>
 #include <stddef.h>
@@ -59,15 +60,15 @@ static InterpretResult run() {
   } while (false)
 
   for (;;) {
-#ifndef DEBUG_TRACE_EXECUTION
-    printf("            ");
+#ifdef DEBUG_TRACE_EXECUTION
+    printf("          ");
     for (Value *slot = vm.stack; slot < vm.stackTop; slot++) {
       printf("[ ");
       printValue(*slot);
       printf(" ]");
     }
-    printf("\n")
-        disassembleInstruction(vm.chunk, (int)(vm.ip - vm.chunk->code));
+    printf("\n");
+    disassembleInstruction(vm.chunk, (int)(vm.ip - vm.chunk->code));
 #endif
     uint8_t instruction;
     switch (instruction = READ_BYTE()) {

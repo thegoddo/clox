@@ -21,7 +21,7 @@ static bool isAlpha(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
-static bool isDigit(char c) { return c >= '0' && c < '9'; }
+static bool isDigit(char c) { return c >= '0' && c <= '9'; }
 
 static bool isAtEnd() { return *scanner.current == '\0'; }
 
@@ -70,28 +70,26 @@ static void skipWhitespace() {
   for (;;) {
     char c = peek();
     switch (c) {
-      switch (c) {
-      case ' ':
-      case '\r':
-      case '\t':
-        advance();
-        break;
-      case '\n':
-        scanner.line++;
-        advance();
-        break;
-      case '/':
-        if (peekNext() == '/') {
-          // A comment goes until the end of line
-          while (peek() != '\n' && !isAtEnd())
-            advance();
-        } else {
-          return;
-        }
-        break;
-      default:
+    case ' ':
+    case '\r':
+    case '\t':
+      advance();
+      break;
+    case '\n':
+      scanner.line++;
+      advance();
+      break;
+    case '/':
+      if (peekNext() == '/') {
+        // A comment goes until the end of line
+        while (peek() != '\n' && !isAtEnd())
+          advance();
+      } else {
         return;
       }
+      break;
+    default:
+      return;
     }
   }
 }

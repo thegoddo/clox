@@ -1,19 +1,15 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
 
 #include "chunk.h"
 #include "common.h"
 #include "compiler.h"
-#include "debug.h"
 #include "scanner.h"
 
 #ifdef DEBUG_PRINT_CODE
 #include "debug.h"
-
-#endif /* ifdef DEBUG_PRINT_CODE                                               \
-#include "debug.h" */
+#endif
 
 typedef struct {
   Token current;
@@ -50,9 +46,9 @@ Chunk *compilingChunk;
 static Chunk *currentChunk() { return compilingChunk; }
 
 static void errorAt(Token *token, const char *message) {
-  // parser.panicMode = true;
   if (parser.panicMode)
     return;
+  parser.panicMode = true;
   fprintf(stderr, "[line %d] Error", token->line);
 
   if (token->type == TOKEN_EOF) {
@@ -168,6 +164,8 @@ static void binary() {
   case TOKEN_SLASH:
     emitByte(OP_DIVIDE);
     break;
+  default:
+    return; // Unreachable.
   }
 }
 
@@ -288,21 +286,5 @@ bool compile(const char *source, Chunk *chunk) {
   expression();
   consume(TOKEN_EOF, "Expect end of expression.");
   endCompiler();
-
-  int line = -1;
-  for (;;) {
-    Token token = scanToken();
-    if (token.line != line) {
-      printf("%4d ", token.line);
-      line = token.line;
-    } else {
-      printf("  | ");
-    }
-    printf("%2d '%.*s'\n", token.type, token.length, token.start);
-
-    if (token.type == TOKEN_EOF)
-      break;
-  }
-
   return !parser.hadError;
 }
