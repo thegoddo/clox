@@ -2,8 +2,8 @@
 <h1>High-level design</h1>
 <p class=lede>clox is a bytecode interpreter for the Lox language, written in C while following <em>Crafting Interpreters</em> (Part III). Source goes in; a compact bytecode program is produced; a stack VM executes it.</p>
 
-<div class=banner><b class=t>Where you are: chapter 18 complete</b>
-You have finished <b>chapter 18 – Types of Values</b> (fixes to match the book are in the working tree, not yet committed). The language is still a <em>calculator</em>: one expression per line (numbers, booleans, nil, <code>- ! + - * / == != &lt; &lt;= &gt; &gt;=</code>). There are no statements, strings, or variables yet.
+<div class=banner><b class=t>Where you are: chapter 19 complete</b>
+You have finished <b>chapter 19 – Strings</b> (fixes to match the book are in the working tree, not yet committed). The language is still a <em>calculator</em>: one expression per line (numbers, booleans, nil, <b>string literals</b>, <code>- ! + - * / == != &lt; &lt;= &gt; &gt;=</code>, with <code>+</code> also concatenating strings). There are no statements or variables yet.
 <br>It builds cleanly with gcc (<code>-Wall -Wextra -std=c11</code>; the only warning is the book's unused <code>oldSize</code> in <code>reallocate</code>) and passes the smoke tests in the <a href="lld.html#issues">LLD</a>.</div>
 
 <h2>Architecture</h2>
@@ -28,7 +28,7 @@ You have finished <b>chapter 18 – Types of Values</b> (fixes to match the book
 <p>Everything is <strong>single-pass</strong>: there is no AST. The compiler pulls tokens from the scanner one at a time and writes bytecode into a <code>Chunk</code> as soon as it recognises each construct. The VM then walks the chunk with an instruction pointer, using a value stack for operands.</p>
 
 <h2>Modules</h2>
-<table><tr><th>Module</th><th>Layer</th><th>Responsibility</th></tr><tr><td><a href="files/main.c.html"><code>main.c</code></a></td><td>Entry</td><td>CLI. REPL or script mode, exit codes.</td></tr><tr><td><a href="files/vm.c.html"><code>vm.c</code></a></td><td>Runtime</td><td>Owns the stack and instruction pointer. interpret() = compile + run.</td></tr><tr><td><a href="files/compiler.c.html"><code>compiler.c</code></a></td><td>Front-end</td><td>Single-pass Pratt parser; emits bytecode as it parses.</td></tr><tr><td><a href="files/scanner.c.html"><code>scanner.c</code></a></td><td>Front-end</td><td>Lexer. Pull-model: compiler asks for one token at a time.</td></tr><tr><td><a href="files/chunk.c.html"><code>chunk.c</code></a></td><td>Data</td><td>Bytecode array + line table + constant pool.</td></tr><tr><td><a href="files/value.c.html"><code>value.c</code></a></td><td>Data</td><td>Tagged-union runtime values; ValueArray.</td></tr><tr><td><a href="files/memory.c.html"><code>memory.c</code></a></td><td>Support</td><td>The only malloc/free gateway.</td></tr><tr><td><a href="files/debug.c.html"><code>debug.c</code></a></td><td>Support</td><td>Disassembler.</td></tr><tr><td><a href="files/common.h.html"><code>common.h</code></a></td><td>Support</td><td>Shared includes + debug flags.</td></tr></table>
+<table><tr><th>Module</th><th>Layer</th><th>Responsibility</th></tr><tr><td><a href="files/main.c.html"><code>main.c</code></a></td><td>Entry</td><td>CLI. REPL or script mode, exit codes.</td></tr><tr><td><a href="files/vm.c.html"><code>vm.c</code></a></td><td>Runtime</td><td>Owns the stack and instruction pointer. interpret() = compile + run.</td></tr><tr><td><a href="files/compiler.c.html"><code>compiler.c</code></a></td><td>Front-end</td><td>Single-pass Pratt parser; emits bytecode as it parses.</td></tr><tr><td><a href="files/scanner.c.html"><code>scanner.c</code></a></td><td>Front-end</td><td>Lexer. Pull-model: compiler asks for one token at a time.</td></tr><tr><td><a href="files/chunk.c.html"><code>chunk.c</code></a></td><td>Data</td><td>Bytecode array + line table + constant pool.</td></tr><tr><td><a href="files/value.c.html"><code>value.c</code></a></td><td>Data</td><td>Tagged-union runtime values; ValueArray.</td></tr><tr><td><a href="files/object.c.html"><code>object.c</code></a></td><td>Data</td><td>Heap objects: <code>Obj</code> header, <code>ObjString</code>, <code>copyString</code>/<code>takeString</code>.</td></tr><tr><td><a href="files/memory.c.html"><code>memory.c</code></a></td><td>Support</td><td>The only malloc/free gateway; <code>freeObjects()</code> frees every heap object.</td></tr><tr><td><a href="files/debug.c.html"><code>debug.c</code></a></td><td>Support</td><td>Disassembler.</td></tr><tr><td><a href="files/common.h.html"><code>common.h</code></a></td><td>Support</td><td>Shared includes + debug flags.</td></tr></table>
 
 <h2>Layering</h2>
 <p>Dependencies point downward. (Click a box for its file page.) One wrinkle: <code>compiler.h</code> includes <code>vm.h</code> (for <code>Chunk</code>), and <code>vm.c</code> calls the compiler, so runtime and front-end know about each other at the header level.</p>
@@ -49,8 +49,9 @@ You have finished <b>chapter 18 – Types of Values</b> (fixes to match the book
 <div class=card><b>Pratt parser, no AST</b><br>One table (<code>rules[]</code>) drives all expression parsing and precedence — adding an operator is one table row.</div>
 <div class=card><b>Stack-based VM</b><br>Operands implicit on a stack → short instructions, trivial codegen.</div>
 <div class=card><b>Pull scanner + trie keywords</b><br>No token array; keyword lookup with a hand-rolled trie — zero allocation.</div>
-<div class=card><b>Tagged-union values</b><br>16-byte <code>Value</code>; no coercion; only <code>nil</code> and <code>false</code> are falsey.</div>
+<div class=card><b>Tagged-union values</b><br>16-byte <code>Value</code> (bool / nil / number / heap-object pointer); no coercion; only <code>nil</code> and <code>false</code> are falsey.</div>
 <div class=card><b>One allocator</b><br><code>reallocate()</code> is the sole heap gateway, so a future GC can count bytes.</div>
+<div class=card><b>Intrusive object list</b><br>Every heap object starts with an <code>Obj</code> header whose <code>next</code> links it into <code>vm.objects</code>; <code>freeVM()</code> walks that list. This is the groundwork for the GC.</div>
 </div>
 
 <h2>Language supported today</h2>
@@ -60,8 +61,8 @@ comparison → term ( ( ">" | ">=" | "<" | "<=" ) term )*
 term       → factor ( ( "-" | "+" ) factor )*
 factor     → unary ( ( "/" | "*" ) unary )*
 unary      → ( "!" | "-" ) unary | primary
-primary    → NUMBER | "true" | "false" | "nil" | "(" expression ")"</code></pre>
-<p>Strings, identifiers, <code>and</code>/<code>or</code>, <code>print</code>, <code>var</code>, blocks etc. are tokenised but have no parse rule (<code>rules[]</code> entry is <code>{NULL, NULL, PREC_NONE}</code>), so they give <code>Expect expression.</code></p>
+primary    → NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")"</code></pre>
+<p>Identifiers, <code>and</code>/<code>or</code>, <code>print</code>, <code>var</code>, blocks etc. are tokenised but have no parse rule (<code>rules[]</code> entry is <code>{NULL, NULL, PREC_NONE}</code>), so they give <code>Expect expression.</code></p>
 
 <h2>Build, tooling &amp; conventions</h2>
 <ul>
@@ -72,10 +73,11 @@ primary    → NUMBER | "true" | "false" | "nil" | "(" expression ")"</code></pr
 <li>No tests exist yet.</li></ul>
 
 <h2>Progress against the book</h2>
-<table><tr><th>Ch</th><th>Topic</th><th>Status</th><th>Notes</th></tr><tr><td>14</td><td>Chunks of Bytecode</td><td><span class="tag t-done">done</span></td><td>chunk.c, debug.c, memory.c</td></tr><tr><td>15</td><td>A Virtual Machine</td><td><span class="tag t-done">done</span></td><td>vm.c — stack, run loop</td></tr><tr><td>16</td><td>Scanning on Demand</td><td><span class="tag t-done">done</span></td><td>Scanner works (nested switch + isDigit fixed)</td></tr><tr><td>17</td><td>Compiling Expressions</td><td><span class="tag t-done">done</span></td><td>Pratt parser: numbers, grouping, unary, binary</td></tr><tr><td>18</td><td>Types of Values</td><td><span class="tag t-done">done</span></td><td>Bool/nil/number values, comparison + equality opcodes</td></tr><tr><td>19</td><td>Strings</td><td><span class="tag t-todo">not started</span></td><td>needs Obj header, heap objects, concat</td></tr><tr><td>20</td><td>Hash Tables</td><td><span class="tag t-todo">not started</span></td><td>string interning, globals table</td></tr><tr><td>21</td><td>Global Variables</td><td><span class="tag t-todo">not started</span></td><td>statements, print, var, synchronize()</td></tr><tr><td>22–25</td><td>Locals · Control flow · Functions · Closures</td><td><span class="tag t-todo">not started</span></td><td></td></tr><tr><td>26–30</td><td>GC · Classes · Methods · Inheritance · Optimisation</td><td><span class="tag t-todo">not started</span></td><td></td></tr></table>
+<table><tr><th>Ch</th><th>Topic</th><th>Status</th><th>Notes</th></tr><tr><td>14</td><td>Chunks of Bytecode</td><td><span class="tag t-done">done</span></td><td>chunk.c, debug.c, memory.c</td></tr><tr><td>15</td><td>A Virtual Machine</td><td><span class="tag t-done">done</span></td><td>vm.c — stack, run loop</td></tr><tr><td>16</td><td>Scanning on Demand</td><td><span class="tag t-done">done</span></td><td>Scanner works (nested switch + isDigit fixed)</td></tr><tr><td>17</td><td>Compiling Expressions</td><td><span class="tag t-done">done</span></td><td>Pratt parser: numbers, grouping, unary, binary</td></tr><tr><td>18</td><td>Types of Values</td><td><span class="tag t-done">done</span></td><td>Bool/nil/number values, comparison + equality opcodes</td></tr><tr><td>19</td><td>Strings</td><td><span class="tag t-done">done</span></td><td>object.c/h — <code>Obj</code>/<code>ObjString</code>, <code>VAL_OBJ</code>, concat in <code>OP_ADD</code>, <code>freeObjects</code></td></tr><tr><td>20</td><td>Hash Tables</td><td><span class="tag t-todo">not started</span></td><td>string interning, globals table</td></tr><tr><td>21</td><td>Global Variables</td><td><span class="tag t-todo">not started</span></td><td>statements, print, var, synchronize()</td></tr><tr><td>22–25</td><td>Locals · Control flow · Functions · Closures</td><td><span class="tag t-todo">not started</span></td><td></td></tr><tr><td>26–30</td><td>GC · Classes · Methods · Inheritance · Optimisation</td><td><span class="tag t-todo">not started</span></td><td></td></tr></table>
 
 <h2>History</h2>
 <table><tr><th>Date</th><th>Commit</th><th>What</th></tr>
+<tr><td>2026-10-26</td><td><code>50c662e</code> + working tree</td><td>strings — <code>Obj</code>/<code>ObjString</code>, string literals, concatenation; syntax/type fixes to match the book</td></tr>
 <tr><td>2026-10-22</td><td><code>f84463e</code></td><td>value type — tagged union, bool/nil ops, comparison opcodes</td></tr>
 <tr><td>2026-10-19</td><td><code>7be15e1</code></td><td>setup compiling and precedence — Pratt parser, number/unary/binary/grouping</td></tr>
 <tr><td>2026-10-13</td><td><code>9bd8c85</code></td><td>tries, DFA, and scanner</td></tr>
@@ -85,7 +87,7 @@ primary    → NUMBER | "true" | "false" | "nil" | "(" expression ")"</code></pr
 
 <h2>Suggested next steps</h2>
 <ol>
-<li>Smoke test: <code>1 + 2 * 3</code> → <code>7</code>; <code>!(5 - 4 &gt; 3 * 2 == !nil)</code> → <code>true</code>; <code>-true</code> → runtime error.</li>
-<li>Commit the fixes, then start chapter 19 (strings / <code>Obj</code>).</li></ol>
+<li>Smoke test: <code>1 + 2 * 3</code> → <code>7</code>; <code>"st" + "ri" + "ng"</code> → <code>string</code>; <code>"a" + "b" == "ab"</code> → <code>true</code>; <code>"a" + 1</code> → runtime error.</li>
+<li>Commit the fixes, then start chapter 20 (hash tables / string interning).</li></ol>
 <p>Details: <a href="lld.html">Low-level design →</a> · <a href="files/index.html">File docs →</a></p>
 </main></body></html>

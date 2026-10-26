@@ -1,7 +1,7 @@
 <!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Low-level design · clox</title><link rel=stylesheet href='style.css'></head><body><header class=top><div class=in><b>clox</b><a href="index.html">Overview</a><a href="hld.html">High-level design</a><a href="lld.html" class="on">Low-level design</a><a href="files/index.html">File docs</a></div></header><main>
 <h1>Low-level design</h1>
 <p class=lede>Data layouts, algorithms, and the exact mechanics of each stage. Line references link into the annotated sources.</p>
-<div class=meta><span>jump:</span><a href="#memory">memory</a> · <a href="#value">values</a> · <a href="#chunk">chunk</a> · <a href="#opcodes">opcodes</a> · <a href="#scanner">scanner</a> · <a href="#compiler">compiler</a> · <a href="#vm">VM</a> · <a href="#debug">disassembler</a> · <a href="#issues">issues</a> · <a href="#roadmap">roadmap</a></div>
+<div class=meta><span>jump:</span><a href="#memory">memory</a> · <a href="#value">values</a> · <a href="#objects">objects</a> · <a href="#chunk">chunk</a> · <a href="#opcodes">opcodes</a> · <a href="#scanner">scanner</a> · <a href="#compiler">compiler</a> · <a href="#vm">VM</a> · <a href="#debug">disassembler</a> · <a href="#issues">issues</a> · <a href="#roadmap">roadmap</a></div>
 
 <h2 id=memory>1. Memory &amp; dynamic arrays</h2>
 <p>Three structures share one growth pattern: <code>Chunk.code</code> / <code>Chunk.lines</code>, and <code>ValueArray.values</code>. Each has <code>count</code> (used) and <code>capacity</code> (allocated).</p>
@@ -15,17 +15,33 @@
 <h2 id=value>2. Value representation</h2>
 <pre><code>typedef struct {
   ValueType type;          // 4 bytes (enum) + 4 padding
-  union { bool boolean; double number; } as;   // 8 bytes
+  union { bool boolean; double number; Obj *obj; } as;   // 8 bytes
 } Value;                   // 16 bytes on 64-bit</code></pre>
 <table><tr><th>Operation</th><th>Behaviour</th></tr>
 <tr><td>Truthiness</td><td><code>isFalsey</code>: only <code>nil</code> and <code>false</code>. <code>0</code> is truthy.</td></tr>
-<tr><td>Equality</td><td>Tags differ ⇒ false. nil==nil. bool/number by payload. No coercion (<code>1 == true</code> is false).</td></tr>
-<tr><td>Printing</td><td><code>true</code>/<code>false</code>/<code>nil</code>/<code>%g</code> (so <code>1.0</code> → <code>1</code>).</td></tr>
-<tr><td>Arithmetic</td><td>Both operands must be numbers else <code>Operands must be numbers.</code></td></tr></table>
+<tr><td>Equality</td><td>Tags differ ⇒ false. nil==nil. bool/number by payload. Objects: string compare by length + <code>memcmp</code> (no interning yet). No coercion (<code>1 == true</code> is false).</td></tr>
+<tr><td>Printing</td><td><code>true</code>/<code>false</code>/<code>nil</code>/<code>%g</code> (so <code>1.0</code> → <code>1</code>); objects via <code>printObject</code>.</td></tr>
+<tr><td>Arithmetic</td><td>Both operands must be numbers else <code>Operands must be numbers.</code> Exception: <code>+</code> also accepts two strings.</td></tr></table>
 <p>Constructors (see <a href="files/value.h.html#L23"><code>value.h:23-25</code></a>):</p>
 <pre><code>#define BOOL_VAL(value)   ((Value){VAL_BOOL,   {.boolean = value}})
 #define NIL_VAL           ((Value){VAL_NIL,    {.number = 0}})
-#define NUMBER_VAL(value) ((Value){VAL_NUMBER, {.number = value}})</code></pre>
+#define NUMBER_VAL(value) ((Value){VAL_NUMBER, {.number = value}})
+#define OBJ_VAL(object)   ((Value){VAL_OBJ,    {.obj = (Obj *)object}})
+#define AS_OBJ(value)     ((value).as.obj)</code></pre>
+
+<h2 id=objects>2b. Heap objects &amp; strings (chapter 19)</h2>
+<pre><code>Value { VAL_OBJ, as.obj ─┐ }
+                         ▼
+ObjString ┌ Obj { type = OBJ_STRING, next ─▶ (previous allocation) } ┐   ← vm.objects points at the newest
+          │ int   length                                            │
+          │ char *chars ──▶ [ h ][ i ][ \0 ]   (separate heap block) │
+          └──────────────────────────────────────────────────────────┘</code></pre>
+<ul><li><strong>Struct inheritance:</strong> <code>Obj</code> is the first member of <code>ObjString</code>, so <code>(Obj*)str</code> and <code>(ObjString*)obj</code> are both valid. The <code>AS_STRING</code>/<code>AS_CSTRING</code> macros rely on it.</li>
+<li><strong>Allocation:</strong> <code>ALLOCATE_OBJ</code> → <code>allocateObject</code> → <code>reallocate</code>; the new object is pushed on the head of <code>vm.objects</code>.</li>
+<li><strong>Literals:</strong> <code>string()</code> in the compiler calls <code>copyString(start + 1, length - 2)</code> to strip the quotes and copy the text, because the source buffer is freed after compilation.</li>
+<li><strong>Concatenation</strong> (<code>concatenate()</code> in vm.c): pop both operands, <code>ALLOCATE</code> <code>a.length + b.length + 1</code> bytes, <code>memcpy</code> both, add the terminating NUL, hand the buffer to <code>takeString</code> (no extra copy), push the result.</li>
+<li><strong>Freeing:</strong> <code>freeVM()</code> → <code>freeObjects()</code> walks <code>vm.objects</code>; <code>freeObject</code> frees the char buffer then the <code>ObjString</code> itself. Nothing is freed mid-run yet (GC comes in a later chapter), so a long REPL session keeps all intermediate strings until exit.</li></ul>
+<p>Source: <a href="files/object.h.html"><code>object.h</code></a>, <a href="files/object.c.html"><code>object.c</code></a>, <a href="files/memory.c.html#L19"><code>memory.c</code></a>.</p>
 
 <h2 id=chunk>3. Chunk layout &amp; constant encoding</h2>
 <pre><code>Chunk
@@ -104,13 +120,15 @@ unary():    op = previous.type;  parsePrecedence(PREC_UNARY);  emit NEGATE/NOT</
     CONSTANT: push(constants[*ip++])
     NIL/TRUE/FALSE: push literal
     EQUAL: b=pop a=pop push(valuesEqual)
-    GREATER/LESS/ADD/SUB/MUL/DIV: BINARY_OP (type-check → pop b, pop a → push(a op b))
+    GREATER/LESS/SUB/MUL/DIV: BINARY_OP (type-check → pop b, pop a → push(a op b))
+    ADD: both strings → concatenate();  both numbers → push(a + b);  else runtime error
     NOT: push(isFalsey(pop))     NEGATE: check number; push(-pop)
     RETURN: print(pop); return OK
   }
 }</code></pre>
 <table><tr><th>Runtime error</th><th>Raised by</th></tr>
-<tr><td><code>Operands must be numbers.</code></td><td><code>BINARY_OP</code> (add, sub, mul, div, &gt;, &lt;)</td></tr>
+<tr><td><code>Operands must be numbers.</code></td><td><code>BINARY_OP</code> (sub, mul, div, &gt;, &lt;)</td></tr>
+<tr><td><code>Operands must be two numbers or two strings.</code></td><td><code>OP_ADD</code></td></tr>
 <tr><td><code>Operand must be a number.</code></td><td><code>OP_NEGATE</code></td></tr></table>
 <p>After printing the message and <code>[line N] in script</code>, the stack is reset and <code>run</code> returns <code>INTERPRET_RUNTIME_ERROR</code>.</p>
 <p><strong>No overflow check:</strong> pushing past 256 values corrupts memory. Not reachable with the current single-expression grammar, but reachable later.</p>
@@ -124,13 +142,13 @@ unary():    op = previous.type;  parsePrecedence(PREC_UNARY);  emit NEGATE/NOT</
 <p><code>disassembleInstruction</code> returns the next offset (1 for simple, 2 for constant instructions). <strong>Add each new opcode to its switch.</strong></p>
 
 <h2 id=issues>9. Full issue list</h2>
-<p>Checked against the book (through chapter 18) and by building with gcc (MSYS2 ucrt64). These are the remaining, non-book-critical items; the real errors found earlier are fixed (see <a href="#fixed">fixed list</a> below).</p>
+<p>Checked against the book (through chapter 19) and by building with gcc (MSYS2 ucrt64). These are the remaining, non-book-critical items; the real errors found earlier are fixed (see <a href="#fixed">fixed list</a> below).</p>
 <table><tr><th>Sev</th><th>Where</th><th>Problem</th></tr><tr><td><span class="tag t-bug">bug</span></td><td><a href="files/githooks-pre-commit.html"><code>.githooks/pre-commit</code></a></td><td>Git only runs it if <code>core.hooksPath</code> points here. In this clone <code>git config core.hooksPath</code> is empty, so the hook is currently <strong>inactive</strong>. Activate with <code>git config core.hooksPath .githooks</code>.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/vm.h.html#L6"><code>vm.h:6</code></a></td><td>Fixed 256-slot stack and no overflow check in <code>push</code>. Fine for expressions; deep nesting later will need a check or a growable stack.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/vm.c.html#L32"><code>vm.c:32</code></a></td><td><code>push</code> has no stack-overflow check.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/vm.c.html#L74"><code>vm.c:74</code></a></td><td>No <code>default</code> case in the switch.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/compiler.c.html#L13"><code>compiler.c:13</code></a></td><td><code>debug.h</code> is included three times (line 9, line 13, and inside a garbled comment on 15-16). Keep the one at line 9.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/compiler.c.html#L35"><code>compiler.c:35</code></a></td><td><code>typedef void (*ParseFn)();</code> — empty parens mean 'unspecified args' in C before C23; <code>(void)</code> is stricter.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/compiler.c.html#L273"><code>compiler.c:273</code></a></td><td><code>infixRule()</code> is called without a NULL check. Safe today because every token with non-<code>PREC_NONE</code> precedence has an infix, but keep it in mind when editing the table.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/scanner.c.html#L105"><code>scanner.c:105</code></a></td><td>Missing blank line between <code>checkKeyword</code> and <code>identifierType</code> (clang-format won't add one).</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/chunk.h.html#L28"><code>chunk.h:28</code></a></td><td>Comment contains a URL to the book's diagram — harmless but clang-format will keep re-wrapping it.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/chunk.c.html#L2"><code>chunk.c:2</code></a></td><td><code>&lt;sys/types.h&gt;</code> isn't needed (auto-include artefact). Same in compiler.c.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/value.c.html#L53"><code>value.c:53</code></a></td><td><code>default: return false;</code> is unreachable now that all three tags are handled; it silences warnings and will matter once <code>VAL_OBJ</code> exists.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/Makefile.html#L28"><code>Makefile:28</code></a></td><td>On Windows/MinGW <code>gcc -o clox</code> produces <code>clox.exe</code>, so <code>clean</code> (<code>rm -f clox</code>) won't remove it.</td></tr><tr><td><span class="tag t-nit">nit</span></td><td><a href="files/githooks-pre-commit.html#L22"><code>.githooks/pre-commit:22</code></a></td><td>The <code>exit 1</code> sits inside a pipe's subshell (<code>printf | while</code>). Under <code>set -e</code> the pipeline status still propagates, so it works in practice, but it's subtle.</td></tr></table>
 
-<h3 id=fixed>Fixed to match the book</h3><ul><li>value.h: <code>*_VAL</code> macros use <code>Value</code></li><li>scanner.c: removed stray nested <code>switch</code> in <code>skipWhitespace</code>; <code>isDigit</code> now includes 9</li><li>vm.c: trace guard <code>#ifdef</code>, added <code>;</code> and <code>#include "debug.h"</code></li><li>compiler.c: removed leftover token-dump loop; <code>panicMode = true</code> restored; <code>default</code> case in <code>binary()</code>; tidied includes</li><li>memory.h: parenthesised <code>GROW_CAPACITY</code>; chunk.c: removed stray prototype</li></ul><h3>Smoke tests</h3><table><tr><th>Input</th><th>Result</th></tr><tr><td><code>1 + 2 * 3</code></td><td><code>7</code></td></tr><tr><td><code>9 + 10</code></td><td><code>19</code></td></tr><tr><td><code>1 &lt;= 2</code></td><td><code>true</code></td></tr><tr><td><code>!(5 - 4 &gt; 3 * 2 == !nil)</code></td><td><code>true</code></td></tr><tr><td><code>nil == false</code></td><td><code>false</code></td></tr><tr><td><code>1 / 0</code></td><td><code>inf</code></td></tr><tr><td><code>-true</code></td><td>runtime error, exit 70</td></tr><tr><td><code>1 +</code>, <code>(1</code>, <code>"hi"</code></td><td>compile errors, exit 65</td></tr></table><p>Also confirmed: usage → 64, missing file → 74.</p>
+<h3 id=fixed>Fixed to match the book</h3><ul><li><strong>Chapter 19:</strong> compiler.c <code>string()</code> was missing <code>));</code> (syntax error) and <code>#include "object.h"</code>; value.h had <code>typedef struct Obj obj;</code> (should be <code>Obj</code>) and <code>AS_OBJ</code> returned a comparison instead of <code>(value).as.obj</code>; object.c defined <code>allocateString</code> after its use; memory.c declared a variable directly after a <code>case</code> label (needs braces); Makefile did not list <code>object.c</code>/<code>object.h</code>; vm.c error text said "two string"</li><li>value.h: <code>*_VAL</code> macros use <code>Value</code></li><li>scanner.c: removed stray nested <code>switch</code> in <code>skipWhitespace</code>; <code>isDigit</code> now includes 9</li><li>vm.c: trace guard <code>#ifdef</code>, added <code>;</code> and <code>#include "debug.h"</code></li><li>compiler.c: removed leftover token-dump loop; <code>panicMode = true</code> restored; <code>default</code> case in <code>binary()</code>; tidied includes</li><li>memory.h: parenthesised <code>GROW_CAPACITY</code>; chunk.c: removed stray prototype</li></ul><h3>Smoke tests</h3><table><tr><th>Input</th><th>Result</th></tr><tr><td><code>1 + 2 * 3</code></td><td><code>7</code></td></tr><tr><td><code>9 + 10</code></td><td><code>19</code></td></tr><tr><td><code>1 &lt;= 2</code></td><td><code>true</code></td></tr><tr><td><code>!(5 - 4 &gt; 3 * 2 == !nil)</code></td><td><code>true</code></td></tr><tr><td><code>nil == false</code></td><td><code>false</code></td></tr><tr><td><code>1 / 0</code></td><td><code>inf</code></td></tr><tr><td><code>-true</code></td><td>runtime error, exit 70</td></tr><tr><td><code>1 +</code>, <code>(1</code>, <code>"hi"</code></td><td>compile errors, exit 65</td></tr></table><p>Also confirmed: usage → 64, missing file → 74.</p>
 <h2 id=roadmap>10. Roadmap (from the book)</h2>
 <ul>
-<li><strong>Ch19 Strings:</strong> <code>Obj</code> header + <code>ObjString</code>, <code>VAL_OBJ</code>, <code>copyString</code>, concatenation in <code>OP_ADD</code>, <code>freeObjects</code>.</li>
+<li><strong>Ch19 Strings:</strong> <span class="tag t-done">done</span> <code>Obj</code> header + <code>ObjString</code>, <code>VAL_OBJ</code>, <code>copyString</code>, concatenation in <code>OP_ADD</code>, <code>freeObjects</code>.</li>
 <li><strong>Ch20 Hash tables:</strong> <code>Table</code> (open addressing), string interning.</li>
 <li><strong>Ch21 Globals:</strong> declarations, <code>print</code>/expression statements, <code>OP_PRINT/POP/DEFINE_GLOBAL/GET_GLOBAL/SET_GLOBAL</code>, enable <code>panicMode</code> + <code>synchronize()</code>; then <code>OP_RETURN</code> stops printing.</li>
 <li><strong>Ch22+ :</strong> locals, jumps, functions &amp; call frames, closures, GC, classes.</li></ul>

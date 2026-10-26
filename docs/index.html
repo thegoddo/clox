@@ -1,13 +1,13 @@
 <!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Overview · clox</title><link rel=stylesheet href='style.css'></head><body><header class=top><div class=in><b>clox</b><a href="index.html" class="on">Overview</a><a href="hld.html">High-level design</a><a href="lld.html">Low-level design</a><a href="files/index.html">File docs</a></div></header><main>
 <h1>clox — project docs</h1>
-<p class=lede>A refresher for coming back to the project after a long break. Generated from the source at commit <code>f84463e</code>.</p>
+<p class=lede>A refresher for coming back to the project after a long break. Updated for chapter 19 (working tree on top of commit <code>50c662e</code>).</p>
 <div class=banner><b class=t>Short version</b>
-It's a Lox bytecode interpreter in C (Crafting Interpreters, Part III). You've finished chapter 18. It evaluates single expressions only. It builds cleanly and passes the smoke tests; 0 blocker(s), 1 bug(s), 12 minor nit(s) remain.</div>
+It's a Lox bytecode interpreter in C (Crafting Interpreters, Part III). You've finished chapter 19 (Strings). It evaluates single expressions only, now including string literals, <code>+</code> concatenation and string equality. The chapter-19 syntax/type errors were fixed to match the book; it builds cleanly with gcc and passes the smoke tests.</div>
 <div class=grid>
 <div class=card><b><a href="hld.html">High-level design</a></b><br>Architecture, modules, flow of a REPL line, progress vs. the book, next steps.</div>
 <div class=card><b><a href="lld.html">Low-level design</a></b><br>Data layouts, opcode table, Pratt parser algorithm + trace, VM loop, full issue list.</div>
-<div class=card><b><a href="files/index.html">File docs</a></b><br>One page per file (21): purpose, symbols, gotchas, issues, annotated source.</div>
+<div class=card><b><a href="files/index.html">File docs</a></b><br>One page per file (23): purpose, symbols, gotchas, issues, annotated source.</div>
 </div>
 <h2>When you return</h2>
-<ol><li>Build: <code>export PATH=/c/msys64/ucrt64/bin:$PATH</code> then <code>gcc -Wall -Wextra -std=c11 *.c -o clox</code> (<code>make</code> also needs clang-format).</li><li>Try <code>1 + 2 * 3</code>, <code>!(5 - 4 &gt; 3 * 2 == !nil)</code>, <code>-true</code>.</li><li>Commit the fixes, then begin chapter 19 (Strings).</li></ol>
+<ol><li>Build: <code>export PATH=/c/msys64/ucrt64/bin:$PATH</code> then <code>gcc -Wall -Wextra -std=c11 *.c -o clox</code> (<code>make</code> also needs clang-format).</li><li>Try <code>1 + 2 * 3</code>, <code>"st" + "ri" + "ng"</code>, <code>"a" + "b" == "ab"</code>, <code>"a" + 1</code> (runtime error).</li><li>Commit the fixes, then begin chapter 20 (Hash Tables).</li></ol>
 </main></body></html>
