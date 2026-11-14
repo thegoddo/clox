@@ -1,0 +1,60 @@
+@startuml hld
+title clox - High Level Design (components and data flow)
+skinparam componentStyle rectangle
+left to right direction
+
+actor User
+rectangle "Source text\n(REPL line or .lox file)" as SRC
+
+package "Front end" {
+  component "main.c\nREPL / runFile" as MAIN
+  component "scanner.c\nsource -> Token" as SCAN
+  component "compiler.c\nPratt parser + bytecode emitter" as COMP
+}
+
+package "Runtime" {
+  component "vm.c\ninterpret() / run()\nstack machine" as VM
+}
+
+package "Data model" {
+  component "chunk.c\nbytecode + line table\n+ constant pool" as CHUNK
+  component "value.c\nValue / ValueArray" as VALUE
+  component "object.c\nObjString (heap objects)" as OBJECT
+}
+
+package "Support" {
+  component "memory.c\nreallocate / freeObjects" as MEM
+  component "debug.c\ndisassembler" as DEBUG
+}
+
+User --> MAIN : types / passes file path
+MAIN --> SRC : readFile()
+SRC --> VM : const char* source\n(interpret)
+
+VM --> COMP : compile(source, &chunk)
+COMP --> SCAN : scanToken()
+SCAN --> COMP : Token\n(type, start, length, line)
+COMP --> CHUNK : writeChunk(byte, line)\naddConstant(Value)
+COMP --> OBJECT : copyString() for string literals
+
+CHUNK --> VM : Chunk (code, lines, constants)
+VM --> VALUE : push/pop Value on stack
+VM --> OBJECT : takeString() on concat
+VM --> User : printValue() on OP_RETURN\nruntimeError() to stderr
+
+CHUNK --> VALUE : constants: ValueArray
+VALUE --> OBJECT : printObject, string equality
+OBJECT --> MEM : allocateObject -> reallocate
+OBJECT --> VM : links into vm.objects list
+CHUNK --> MEM : GROW_ARRAY / FREE_ARRAY
+VALUE --> MEM : GROW_ARRAY / FREE_ARRAY
+MAIN --> MEM : freeVM -> freeObjects
+
+COMP ..> DEBUG : disassembleChunk\n(DEBUG_PRINT_CODE)
+VM ..> DEBUG : disassembleInstruction\n(DEBUG_TRACE_EXECUTION)
+
+note bottom of VM
+  Data pipeline:
+  source -> Tokens -> bytecode Chunk -> operand stack -> printed result
+end note
+@enduml

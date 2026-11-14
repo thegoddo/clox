@@ -1,0 +1,191 @@
+@startuml lld-classes
+title clox - Low Level Design (data structures and functions)
+hide empty members
+skinparam classAttributeIconSize 0
+
+enum OpCode {
+  OP_CONSTANT
+  OP_NIL
+  OP_TRUE
+  OP_FALSE
+  OP_EQUAL
+  OP_GREATER
+  OP_LESS
+  OP_ADD
+  OP_SUBTRACT
+  OP_MULTIPLY
+  OP_DIVIDE
+  OP_NOT
+  OP_NEGATE
+  OP_RETURN
+}
+
+enum ValueType {
+  VAL_BOOL
+  VAL_NIL
+  VAL_NUMBER
+  VAL_OBJ
+}
+
+class Value <<struct, value.h>> {
+  type : ValueType
+  as : union { bool boolean; double number; Obj* obj }
+}
+
+class ValueArray <<struct, value.h>> {
+  capacity : int
+  count : int
+  values : Value*
+  --
+  initValueArray()
+  writeValueArray()
+  freeValueArray()
+  printValue()
+  valuesEqual()
+}
+
+class Chunk <<struct, chunk.h>> {
+  count : int
+  capacity : int
+  code : uint8_t*
+  lines : int*
+  constants : ValueArray
+  --
+  initChunk()
+  writeChunk(byte, line)
+  addConstant(value) : int
+  freeChunk()
+}
+
+enum ObjType {
+  OBJ_STRING
+}
+
+class Obj <<struct, object.h>> {
+  type : ObjType
+  next : Obj*
+}
+
+class ObjString <<struct, object.h>> {
+  obj : Obj
+  length : int
+  chars : char*
+  --
+  takeString(chars, len)
+  copyString(chars, len)
+  printObject()
+}
+
+class VM <<global vm, vm.h>> {
+  chunk : Chunk*
+  ip : uint8_t*
+  stack : Value[256]
+  stackTop : Value*
+  objects : Obj*
+  --
+  initVM()
+  freeVM()
+  interpret(source) : InterpretResult
+  run() : InterpretResult
+  push(Value)
+  pop() : Value
+  peek(distance)
+  concatenate()
+  runtimeError()
+}
+
+enum InterpretResult {
+  INTERPRET_OK
+  INTERPRET_COMPILE_ERROR
+  INTERPRET_RUNTIME_ERROR
+}
+
+class Scanner <<global scanner, scanner.c>> {
+  start : const char*
+  current : const char*
+  line : int
+  --
+  initScanner(source)
+  scanToken() : Token
+}
+
+class Token <<struct, scanner.h>> {
+  type : TokenType
+  start : const char*
+  length : int
+  line : int
+}
+
+class Parser <<global parser, compiler.c>> {
+  current : Token
+  previous : Token
+  hadError : bool
+  panicMode : bool
+}
+
+class ParseRule <<struct, compiler.c>> {
+  prefix : ParseFn
+  infix : ParseFn
+  precedence : Precedence
+}
+
+class Compiler <<compiler.c functions>> {
+  compilingChunk : Chunk*
+  --
+  compile(source, chunk) : bool
+  advance()
+  consume(type, msg)
+  expression()
+  parsePrecedence(prec)
+  grouping() number() string()
+  unary() binary() literal()
+  emitByte() emitBytes() emitConstant()
+  makeConstant() endCompiler()
+  getRule(type)
+}
+
+class Memory <<memory.c>> {
+  reallocate(ptr, old, new)
+  freeObjects()
+}
+
+class Debug <<debug.c>> {
+  disassembleChunk()
+  disassembleInstruction()
+}
+
+class Main <<main.c>> {
+  repl()
+  runFile(path)
+  readFile(path)
+}
+
+Value *-- ValueType
+Value o-- Obj : as.obj
+ValueArray "1" *-- "0..*" Value
+Chunk *-- ValueArray : constants
+Chunk ..> OpCode : code[] holds opcodes\nand constant indexes
+ObjString --|> Obj : first member (cast)
+Obj *-- ObjType
+Obj --> Obj : next (object list)
+VM o-- Chunk : current chunk
+VM *-- "256" Value : stack
+VM o-- Obj : objects list head
+VM ..> InterpretResult
+Scanner ..> Token : produces
+Parser *-- Token : current, previous
+Parser ..> ParseRule : rules[] lookup
+Compiler --> Scanner : scanToken
+Compiler --> Parser
+Compiler --> Chunk : writes
+Compiler --> ObjString : copyString
+VM --> Compiler : compile()
+VM --> Memory
+ObjString ..> Memory : allocateObject
+Chunk ..> Memory
+ValueArray ..> Memory
+Memory ..> VM : walks vm.objects
+Main --> VM : interpret()
+Compiler ..> Debug
+VM ..> Debug
+@enduml

@@ -1,0 +1,80 @@
+@startuml lld-sequence
+title clox - Runtime data flow for the source "1 + 2"
+autonumber
+
+actor User
+participant "main.c" as Main
+participant "vm.c" as VM
+participant "compiler.c" as Comp
+participant "scanner.c" as Scan
+participant "chunk.c" as Chunk
+participant "object.c" as Obj
+participant "memory.c" as Mem
+participant "debug.c" as Dbg
+
+User -> Main : run clox [file] or type in REPL
+Main -> VM : initVM()  (resetStack, objects=NULL)
+Main -> Main : readFile(path) / fgets(line)
+Main -> VM : interpret(source)
+
+== Compile ==
+VM -> Chunk : initChunk(&chunk)
+VM -> Comp : compile(source, &chunk)
+Comp -> Scan : initScanner(source)
+Comp -> Scan : advance() -> scanToken()
+Scan --> Comp : Token{NUMBER, "1", line}
+Comp -> Comp : expression() -> parsePrecedence(ASSIGNMENT)
+Comp -> Comp : prefix rule number()
+Comp -> Chunk : addConstant(NUMBER_VAL(1)) -> index 0
+Comp -> Chunk : writeChunk(OP_CONSTANT, line)\nwriteChunk(0, line)
+loop while next operator precedence >= current
+  Comp -> Scan : advance() -> Token{PLUS}
+  Comp -> Comp : infix rule binary()
+  Comp -> Comp : parsePrecedence(rule+1) -> number() for "2"
+  Comp -> Chunk : addConstant(2), writeChunk(OP_CONSTANT, 1)
+  Comp -> Chunk : writeChunk(OP_ADD)
+end
+note right of Comp
+  For a string literal, string() calls
+  copyString(), which allocates an ObjString
+  on the heap and links it into vm.objects.
+end note
+Comp -> Chunk : endCompiler() -> writeChunk(OP_RETURN)
+Comp -> Dbg : disassembleChunk()  [DEBUG_PRINT_CODE]
+Comp --> VM : true / false (hadError)
+
+alt compile error
+  VM -> Chunk : freeChunk()
+  VM --> Main : INTERPRET_COMPILE_ERROR (exit 65 for files)
+else ok
+  == Execute ==
+  VM -> VM : vm.chunk = &chunk; vm.ip = chunk.code
+  VM -> VM : run()
+  loop fetch-decode-execute
+    VM -> Dbg : disassembleInstruction()  [DEBUG_TRACE_EXECUTION]
+    VM -> VM : READ_BYTE() -> opcode
+    alt OP_CONSTANT
+      VM -> VM : READ_CONSTANT() from chunk.constants\npush(Value)
+    else OP_ADD (numbers)
+      VM -> VM : pop b, pop a, push(a+b)
+    else OP_ADD (strings)
+      VM -> VM : concatenate(): pop b, pop a
+      VM -> Mem : ALLOCATE(char, len+1)
+      VM -> Obj : takeString(chars, len)
+      Obj -> Mem : reallocate() for ObjString
+      Obj -> VM : link into vm.objects
+      VM -> VM : push(OBJ_VAL(result))
+    else type error
+      VM -> VM : runtimeError() -> stderr, resetStack()
+      VM --> Main : INTERPRET_RUNTIME_ERROR (exit 70)
+    else OP_RETURN
+      VM -> User : printValue(pop()) -> stdout
+    end
+  end
+  VM -> Chunk : freeChunk(&chunk)
+  VM --> Main : INTERPRET_OK
+end
+
+Main -> VM : freeVM()
+VM -> Mem : freeObjects() (walk vm.objects, free each)
+@enduml
