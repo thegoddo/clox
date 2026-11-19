@@ -56,7 +56,8 @@ bool valuesEqual(Value a, Value b) {
   case VAL_NUMBER:
     return AS_NUMBER(a) == AS_NUMBER(b);
 
-  case VAL_OBJ: return AS_OBJ(a) == AS_OBJ(b);
+  case VAL_OBJ:
+    return AS_OBJ(a) == AS_OBJ(b);
   default:
     return false; // Unreachable.
   }
