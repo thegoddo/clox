@@ -70,10 +70,32 @@ class ObjString <<struct, object.h>> {
   obj : Obj
   length : int
   chars : char*
+  hash : uint32_t
   --
   takeString(chars, len)
   copyString(chars, len)
   printObject()
+  hashString(chars, len) : uint32_t
+}
+
+class Entry <<struct, table.h>> {
+  key : ObjString*
+  value : Value
+}
+
+class Table <<struct, table.h>> {
+  count : int
+  capacity : int
+  entries : Entry*
+  --
+  initTable()
+  freeTable()
+  tableSet(key, value) : bool
+  tableGet(key, &value) : bool
+  tableDelete(key) : bool
+  tableAddAll(from, to)
+  tableFindString(chars, len, hash) : ObjString*
+  findEntry() / adjustCapacity() (static)
 }
 
 class VM <<global vm, vm.h>> {
@@ -81,6 +103,7 @@ class VM <<global vm, vm.h>> {
   ip : uint8_t*
   stack : Value[256]
   stackTop : Value*
+  strings : Table
   objects : Obj*
   --
   initVM()
@@ -171,6 +194,12 @@ Obj --> Obj : next (object list)
 VM o-- Chunk : current chunk
 VM *-- "256" Value : stack
 VM o-- Obj : objects list head
+VM *-- Table : strings (intern set)
+Table "1" *-- "0..*" Entry
+Entry o-- ObjString : key
+Entry *-- Value : value
+ObjString ..> Table : interned via\ntableFindString / tableSet
+Table ..> Memory
 VM ..> InterpretResult
 Scanner ..> Token : produces
 Parser *-- Token : current, previous

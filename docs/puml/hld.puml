@@ -19,7 +19,8 @@ package "Runtime" {
 package "Data model" {
   component "chunk.c\nbytecode + line table\n+ constant pool" as CHUNK
   component "value.c\nValue / ValueArray" as VALUE
-  component "object.c\nObjString (heap objects)" as OBJECT
+  component "object.c\nObjString (heap objects)\ninterning, hashString" as OBJECT
+  component "table.c\nhash table (open addressing)" as TABLE
 }
 
 package "Support" {
@@ -43,9 +44,12 @@ VM --> OBJECT : takeString() on concat
 VM --> User : printValue() on OP_RETURN\nruntimeError() to stderr
 
 CHUNK --> VALUE : constants: ValueArray
-VALUE --> OBJECT : printObject, string equality
+VALUE --> OBJECT : printObject\n(equality = pointer compare)
 OBJECT --> MEM : allocateObject -> reallocate
 OBJECT --> VM : links into vm.objects list
+OBJECT --> TABLE : tableFindString / tableSet\n(vm.strings intern set)
+VM --> TABLE : initTable / freeTable(vm.strings)
+TABLE --> MEM : GROW_CAPACITY / ALLOCATE / FREE_ARRAY
 CHUNK --> MEM : GROW_ARRAY / FREE_ARRAY
 VALUE --> MEM : GROW_ARRAY / FREE_ARRAY
 MAIN --> MEM : freeVM -> freeObjects

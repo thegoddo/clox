@@ -9,11 +9,13 @@ participant "compiler.c" as Comp
 participant "scanner.c" as Scan
 participant "chunk.c" as Chunk
 participant "object.c" as Obj
+participant "table.c" as Tbl
 participant "memory.c" as Mem
 participant "debug.c" as Dbg
 
 User -> Main : run clox [file] or type in REPL
 Main -> VM : initVM()  (resetStack, objects=NULL)
+VM -> Tbl : initTable(&vm.strings)
 Main -> Main : readFile(path) / fgets(line)
 Main -> VM : interpret(source)
 
@@ -36,8 +38,11 @@ loop while next operator precedence >= current
 end
 note right of Comp
   For a string literal, string() calls
-  copyString(), which allocates an ObjString
-  on the heap and links it into vm.objects.
+  copyString(): hashString(), then
+  tableFindString(&vm.strings). If found, the
+  existing ObjString is reused; otherwise a new
+  one is allocated, linked into vm.objects and
+  added to vm.strings with tableSet().
 end note
 Comp -> Chunk : endCompiler() -> writeChunk(OP_RETURN)
 Comp -> Dbg : disassembleChunk()  [DEBUG_PRINT_CODE]
@@ -61,8 +66,14 @@ else ok
       VM -> VM : concatenate(): pop b, pop a
       VM -> Mem : ALLOCATE(char, len+1)
       VM -> Obj : takeString(chars, len)
-      Obj -> Mem : reallocate() for ObjString
-      Obj -> VM : link into vm.objects
+      Obj -> Tbl : tableFindString(&vm.strings, chars, len, hash)
+      alt already interned
+        Obj -> Mem : FREE_ARRAY(chars)
+      else new string
+        Obj -> Mem : reallocate() for ObjString
+        Obj -> VM : link into vm.objects
+        Obj -> Tbl : tableSet(&vm.strings, string, nil)
+      end
       VM -> VM : push(OBJ_VAL(result))
     else type error
       VM -> VM : runtimeError() -> stderr, resetStack()
@@ -76,5 +87,6 @@ else ok
 end
 
 Main -> VM : freeVM()
+VM -> Tbl : freeTable(&vm.strings)
 VM -> Mem : freeObjects() (walk vm.objects, free each)
 @enduml
