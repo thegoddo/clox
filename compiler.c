@@ -213,7 +213,7 @@ static void varDeclaration() {
   }
 
   consume(TOKEN_SEMICOLON, "Expect ';' after variable declaration.");
-  
+
   defineVariable(global);
 }
 
